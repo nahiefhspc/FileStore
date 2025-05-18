@@ -30,7 +30,6 @@ from helper_func import *
 from database.database import *
 from database.db_premium import *
 
-
 BAN_SUPPORT = f"{BAN_SUPPORT}"
 TUT_VID = f"{TUT_VID}"
 
@@ -51,14 +50,12 @@ async def short_url(client: Client, message: Message, base64_string):
 
         await message.reply_photo(
             photo=SHORTENER_PIC,
-            caption=SHORT_MSG.format(
-            ),
+            caption=SHORT_MSG.format(),
             reply_markup=InlineKeyboardMarkup(buttons),
         )
 
     except IndexError:
         pass
-
 
 @Bot.on_message(filters.command('start') & filters.private)
 async def start_command(client: Client, message: Message):
@@ -113,25 +110,34 @@ async def start_command(client: Client, message: Message):
         argument = string.split("-")
 
         ids = []
-        if len(argument) == 3:
+        db_channel_id = None
+        if len(argument) == 4:  # Batch link: get-<db_channel_id>-<start>-<end>
             try:
-                start = int(int(argument[1]) / abs(client.db_channel.id))
-                end = int(int(argument[2]) / abs(client.db_channel.id))
+                db_channel_id = int(argument[1])
+                if db_channel_id not in await db.show_db_channels():
+                    await message.reply_text("Invalid database channel.")
+                    return
+                start = int(int(argument[2]) / abs(db_channel_id))
+                end = int(int(argument[3]) / abs(db_channel_id))
                 ids = range(start, end + 1) if start <= end else list(range(start, end - 1, -1))
             except Exception as e:
                 print(f"Error decoding IDs: {e}")
                 return
 
-        elif len(argument) == 2:
+        elif len(argument) == 3:  # Single message: get-<db_channel_id>-<msg_id>
             try:
-                ids = [int(int(argument[1]) / abs(client.db_channel.id))]
+                db_channel_id = int(argument[1])
+                if db_channel_id not in await db.show_db_channels():
+                    await message.reply_text("Invalid database channel.")
+                    return
+                ids = [int(int(argument[2]) / abs(db_channel_id))]
             except Exception as e:
                 print(f"Error decoding ID: {e}")
                 return
 
         temp_msg = await message.reply("<b>Please wait...</b>")
         try:
-            messages = await get_messages(client, ids)
+            messages = await get_messages(client, ids, db_channel_id)
         except Exception as e:
             await message.reply_text("Something went wrong!")
             print(f"Error getting messages: {e}")
@@ -165,7 +171,7 @@ async def start_command(client: Client, message: Message):
                 f"<b>Tʜɪs Fɪʟᴇ ᴡɪʟʟ ʙᴇ Dᴇʟᴇᴛᴇᴅ ɪɴ  {get_exp_time(FILE_AUTO_DELETE)}. Pʟᴇᴀsᴇ sᴀᴠᴇ ᴏʀ ғᴏʀᴡᴀʀᴅ ɪᴛ ᴛᴏ ʏᴏᴜʀ sᴀᴠᴇᴅ ᴍᴇssᴀɢᴇs ʙᴇғᴏʀᴇ ɪᴛ ɢᴇᴛs Dᴇʟᴇᴛᴇᴅ.</b>"
             )
 
-            await asyncio.sleep(FILE_AUTO_DELETE)
+            await asyncio.sleep(FILE_AUTO_DELETEAny)
 
             for snt_msg in codeflix_msgs:    
                 if snt_msg:
@@ -193,13 +199,11 @@ async def start_command(client: Client, message: Message):
     else:
         reply_markup = InlineKeyboardMarkup(
             [
-                    [InlineKeyboardButton("• ᴍᴏʀᴇ ᴄʜᴀɴɴᴇʟs •", url="https://t.me/Nova_Flix/50")],
-
-    [
-                    InlineKeyboardButton("• ᴀʙᴏᴜᴛ", callback_data = "about"),
-                    InlineKeyboardButton('ʜᴇʟᴘ •', callback_data = "help")
-
-    ]
+                [InlineKeyboardButton("• ᴍᴏʀᴇ ᴄʜᴀɴɴᴇʟs •", url="https://t.me/Nova_Flix/50")],
+                [
+                    InlineKeyboardButton("• ᴀʙᴏᴜᴛ", callback_data="about"),
+                    InlineKeyboardButton('ʜᴇʟᴘ •', callback_data="help")
+                ]
             ]
         )
         await message.reply_photo(
@@ -216,16 +220,51 @@ async def start_command(client: Client, message: Message):
         
         return
 
+# Command to set a database channel
+@Bot.on_message(filters.command('setdbchannel') & filters.private & admin)
+async def set_db_channel(client: Client, message: Message):
+    if len(message.command) != 2:
+        await message.reply_text("Usage: /setdbchannel <channel_id>\nExample: /setdbchannel -1001234567890")
+        return
+    try:
+        channel_id = int(message.command[1])
+        if await db.db_channel_exist(channel_id):
+            await message.reply_text("This channel is already set as a database channel.")
+            return
+        await db.add_db_channel(channel_id)
+        await message.reply_text(f"Database channel {channel_id} added successfully.")
+    except ValueError:
+        await message.reply_text("Invalid channel ID. Please provide a valid numeric channel ID (e.g., -1001234567890).")
+    except Exception as e:
+        await message.reply_text(f"Error: {str(e)}")
 
+# Command to remove a database channel
+@Bot.on_message(filters.command('removedbchannel') & filters.private & admin)
+async def remove_db_channel(client: Client, message: Message):
+    if len(message.command) != 2:
+        await message.reply_text("Usage: /removedbchannel <channel_id>\nExample: /removedbchannel -1001234567890")
+        return
+    try:
+        channel_id = int(message.command[1])
+        if not await db.db_channel_exist(channel_id):
+            await message.reply_text("This channel is not set as a database channel.")
+            return
+        await db.rem_db_channel(channel_id)
+        await message.reply_text(f"Database channel {channel_id} removed successfully.")
+    except ValueError:
+        await message.reply_text("Invalid channel ID. Please provide a valid numeric channel ID (e.g., -1001234567890).")
+    except Exception as e:
+        await message.reply_text(f"Error: {str(e)}")
 
-#=====================================================================================##
-# Don't Remove Credit @CodeFlix_Bots, @rohit_1888
-# Ask Doubt on telegram @CodeflixSupport
-
-
-
-# Create a global dictionary to store chat data
-chat_data_cache = {}
+# Command to list database channels
+@Bot.on_message(filters.command('listdbchannels') & filters.private & admin)
+async def list_db_channels(client: Client, message: Message):
+    db_channels = await db.show_db_channels()
+    if not db_channels:
+        await message.reply_text("No database channels are set.")
+        return
+    channel_list = "\n".join([f"• {ch_id}" for ch_id in db_channels])
+    await message.reply_text(f"Current database channels:\n{channel_list}")
 
 async def not_joined(client: Client, message: Message):
     temp = await message.reply("<b><i>Checking Subscription...</i></b>")
@@ -311,20 +350,12 @@ async def not_joined(client: Client, message: Message):
             f"<blockquote expandable><b>Rᴇᴀsᴏɴ:</b> {e}</blockquote>"
         )
 
-#=====================================================================================##
-
 @Bot.on_message(filters.command('myplan') & filters.private)
 async def check_plan(client: Client, message: Message):
     user_id = message.from_user.id  # Get user ID from the message
-
-    # Get the premium status of the user
     status_message = await check_user_plan(user_id)
-
-    # Send the response message to the user
     await message.reply(status_message)
 
-#=====================================================================================##
-# Command to add premium user
 @Bot.on_message(filters.command('addpremium') & filters.private & admin)
 async def add_premium_user_command(client, msg):
     if len(msg.command) != 4:
@@ -343,22 +374,15 @@ async def add_premium_user_command(client, msg):
             "/addpremium 123456789 1 y → 1 year"
         )
         return
-
     try:
         user_id = int(msg.command[1])
         time_value = int(msg.command[2])
-        time_unit = msg.command[3].lower()  # supports: s, m, h, d, y
-
-        # Call add_premium function
+        time_unit = msg.command[3].lower()
         expiration_time = await add_premium(user_id, time_value, time_unit)
-
-        # Notify the admin
         await msg.reply_text(
             f"✅ User `{user_id}` added as a premium user for {time_value} {time_unit}.\n"
             f"Expiration Time: `{expiration_time}`"
         )
-
-        # Notify the user
         await client.send_message(
             chat_id=user_id,
             text=(
@@ -367,14 +391,11 @@ async def add_premium_user_command(client, msg):
                 f"Expires on: `{expiration_time}`"
             ),
         )
-
     except ValueError:
         await msg.reply_text("❌ Invalid input. Please ensure user ID and time value are numbers.")
     except Exception as e:
         await msg.reply_text(f"⚠️ An error occurred: `{str(e)}`")
 
-
-# Command to remove premium user
 @Bot.on_message(filters.command('remove_premium') & filters.private & admin)
 async def pre_remove_user(client: Client, msg: Message):
     if len(msg.command) != 2:
@@ -387,42 +408,26 @@ async def pre_remove_user(client: Client, msg: Message):
     except ValueError:
         await msg.reply_text("user_id must be an integer or not available in database.")
 
-
-# Command to list active premium users
 @Bot.on_message(filters.command('premium_users') & filters.private & admin)
 async def list_premium_users_command(client, message):
-    # Define IST timezone
+    from pytz import timezone
     ist = timezone("Asia/Kolkata")
-
-    # Retrieve all users from the collection
     premium_users_cursor = collection.find({})
     premium_user_list = ['Active Premium Users in database:']
-    current_time = datetime.now(ist)  # Get current time in IST
-
-    # Use async for to iterate over the async cursor
+    current_time = datetime.now(ist)
     async for user in premium_users_cursor:
         user_id = user["user_id"]
         expiration_timestamp = user["expiration_timestamp"]
-
         try:
-            # Convert expiration_timestamp to a timezone-aware datetime object in IST
             expiration_time = datetime.fromisoformat(expiration_timestamp).astimezone(ist)
-
-            # Calculate remaining time
             remaining_time = expiration_time - current_time
-
             if remaining_time.total_seconds() <= 0:
-                # Remove expired users from the database
                 await collection.delete_one({"user_id": user_id})
-                continue  # Skip to the next user if this one is expired
-
-            # If not expired, retrieve user info
+                continue
             user_info = await client.get_users(user_id)
             username = user_info.username if user_info.username else "No Username"
             first_name = user_info.first_name
             mention=user_info.mention
-
-            # Calculate days, hours, minutes, seconds left
             days, hours, minutes, seconds = (
                 remaining_time.days,
                 remaining_time.seconds // 3600,
@@ -430,8 +435,6 @@ async def list_premium_users_command(client, message):
                 remaining_time.seconds % 60,
             )
             expiry_info = f"{days}d {hours}h {minutes}m {seconds}s left"
-
-            # Add user details to the list
             premium_user_list.append(
                 f"UserID: <code>{user_id}</code>\n"
                 f"User: @{username}\n"
@@ -443,24 +446,17 @@ async def list_premium_users_command(client, message):
                 f"UserID: <code>{user_id}</code>\n"
                 f"Error: Unable to fetch user details ({str(e)})"
             )
-
-    if len(premium_user_list) == 1:  # No active users found
+    if len(premium_user_list) == 1:
         await message.reply_text("I found 0 active premium users in my DB")
     else:
         await message.reply_text("\n\n".join(premium_user_list), parse_mode=None)
-
-
-#=====================================================================================##
 
 @Bot.on_message(filters.command("count") & filters.private & admin)
 async def total_verify_count_cmd(client, message: Message):
     total = await db.get_total_verify_count()
     await message.reply_text(f"Tᴏᴛᴀʟ ᴠᴇʀɪғɪᴇᴅ ᴛᴏᴋᴇɴs ᴛᴏᴅᴀʏ: <b>{total}</b>")
 
-
-#=====================================================================================##
-
 @Bot.on_message(filters.command('commands') & filters.private & admin)
 async def bcmd(bot: Bot, message: Message):        
-    reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("• ᴄʟᴏsᴇ •", callback_data = "close")]])
-    await message.reply(text=CMD_TXT, reply_markup = reply_markup, quote= True)
+    reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("• ᴄʟᴏsᴇ •", callback_data="close")]])
+    await message.reply(text=CMD_TXT, reply_markup=reply_markup, quote=True)
