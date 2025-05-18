@@ -60,8 +60,7 @@ async def short_url(client: Client, message: Message, base64_string):
 @Bot.on_message(filters.command('start') & filters.private)
 async def start_command(client: Client, message: Message):
     user_id = message.from_user.id
-    id = message.from_user.id
-    is_premium = await is_premium_user(id)
+    is_premium = await is_premium_user(user_id)
 
     # Check if user is banned
     banned_users = await db.get_ban_users()
@@ -93,109 +92,127 @@ async def start_command(client: Client, message: Message):
 
     if len(text) > 7:
         try:
-            basic = text.split(" ", 1)[1]
-            if basic.startswith("yu3elk"):
-                base64_string = basic[6:-1]
-            else:
-                base64_string = basic
-
-            if not is_premium and user_id != OWNER_ID and not basic.startswith("yu3elk"):
-                await short_url(client, message, base64_string)
-                return
+            base64_string = text.split(" ", 1)[1]
+            if base64_string.startswith("yu3elk"):
+                base64_string = base64_string[6:-1]
+            print(f"Decoding base64 string: {base64_string}")  # Debug log
 
         except Exception as e:
             print(f"Error processing start payload: {e}")
-
-        string = await decode(base64_string)
-        argument = string.split("-")
-
-        ids = []
-        db_channel_id = None
-        if len(argument) == 4:  # Batch link: get-<db_channel_id>-<start>-<end>
-            try:
-                db_channel_id = int(argument[1])
-                if db_channel_id not in await db.show_db_channels():
-                    await message.reply_text("Invalid database channel.")
-                    return
-                start = int(int(argument[2]) / abs(db_channel_id))
-                end = int(int(argument[3]) / abs(db_channel_id))
-                ids = range(start, end + 1) if start <= end else list(range(start, end - 1, -1))
-            except Exception as e:
-                print(f"Error decoding IDs: {e}")
-                return
-
-        elif len(argument) == 3:  # Single message: get-<db_channel_id>-<msg_id>
-            try:
-                db_channel_id = int(argument[1])
-                if db_channel_id not in await db.show_db_channels():
-                    await message.reply_text("Invalid database channel.")
-                    return
-                ids = [int(int(argument[2]) / abs(db_channel_id))]
-            except Exception as e:
-                print(f"Error decoding ID: {e}")
-                return
-
-        temp_msg = await message.reply("<b>Please wait...</b>")
-        try:
-            messages = await get_messages(client, ids, db_channel_id)
-        except Exception as e:
-            await message.reply_text("Something went wrong!")
-            print(f"Error getting messages: {e}")
+            await message.reply_text("❌ Invalid link format.")
             return
-        finally:
-            await temp_msg.delete()
 
-        codeflix_msgs = []
-        for msg in messages:
-            caption = (CUSTOM_CAPTION.format(previouscaption="" if not msg.caption else msg.caption.html, 
-                                             filename=msg.document.file_name) if bool(CUSTOM_CAPTION) and bool(msg.document)
-                       else ("" if not msg.caption else msg.caption.html))
+        try:
+            string = await decode(base64_string)
+            print(f"Decoded string: {string}")  # Debug log
+            argument = string.split("-")
 
-            reply_markup = msg.reply_markup if DISABLE_CHANNEL_BUTTON else None
+            ids = []
+            db_channel_id = None
+            if len(argument) == 4:  # Batch link: get-<db_channel_id>-<start>-<end>
+                try:
+                    db_channel_id = int(argument[1])
+                    db_channels = await db.show_db_channels()
+                    print(f"Checking db_channel_id {db_channel_id} against {db_channels}")  # Debug log
+                    if db_channel_id not in db_channels:
+                        await message.reply_text(f"❌ Invalid database channel: {db_channel_id}")
+                        return
+                    start = int(int(argument[2]) / abs(db_channel_id))
+                    end = int(int(argument[3]) / abs(db_channel_id))
+                    ids = range(start, end + 1) if start <= end else list(range(start, end - 1, -1))
+                except ValueError as e:
+                    print(f"Error decoding batch IDs: {e}")
+                    await message.reply_text("❌ Invalid batch link format.")
+                    return
 
+            elif len(argument) == 3:  # Single message: get-<db_channel_id>-<msg_id>
+                try:
+                    db_channel_id = int(argument[1])
+                    db_channels = await db.show_db_channels()
+                    print(f"Checking db_channel_id {db_channel_id} against {db_channels}")  # Debug log
+                    if db_channel_id not in db_channels:
+                        await message.reply_text(f"❌ Invalid database channel: {db_channel_id}")
+                        return
+                    ids = [int(int(argument[2]) / abs(db_channel_id))]
+                except ValueError as e:
+                    print(f"Error decoding single message ID: {e}")
+                    await message.reply_text("❌ Invalid single message link format.")
+                    return
+            else:
+                # Handle older link format (if applicable)
+                await message.reply_text("❌ Unsupported link format. Please use a newer link.")
+                return
+
+            temp_msg = await message.reply("<b>Please wait...</b>")
             try:
-                copied_msg = await msg.copy(chat_id=message.from_user.id, caption=caption, parse_mode=ParseMode.HTML, 
-                                            reply_markup=reply_markup, protect_content=PROTECT_CONTENT)
-                codeflix_msgs.append(copied_msg)
-            except FloodWait as e:
-                await asyncio.sleep(e.x)
-                copied_msg = await msg.copy(chat_id=message.from_user.id, caption=caption, parse_mode=ParseMode.HTML, 
-                                            reply_markup=reply_markup, protect_content=PROTECT_CONTENT)
-                codeflix_msgs.append(copied_msg)
+                messages = await get_messages(client, ids, db_channel_id)
+                if not messages:
+                    await temp_msg.edit("❌ No messages found for the provided IDs.")
+                    return
             except Exception as e:
-                print(f"Failed to send message: {e}")
-                pass
+                await temp_msg.edit("❌ Something went wrong while fetching messages!")
+                print(f"Error getting messages: {e}")
+                return
+            finally:
+                await temp_msg.delete()
 
-        if FILE_AUTO_DELETE > 0:
-            notification_msg = await message.reply(
-                f"<b>Tʜɪs Fɪʟᴇ ᴡɪʟʟ ʙᴇ Dᴇʟᴇᴛᴇᴅ ɪɴ  {get_exp_time(FILE_AUTO_DELETE)}. Pʟᴇᴀsᴇ sᴀᴠᴇ ᴏʀ ғᴏʀᴡᴀʀᴅ ɪᴛ ᴛᴏ ʏᴏᴜʀ sᴀᴠᴇᴅ ᴍᴇssᴀɢᴇs ʙᴇғᴏʀᴇ ɪᴛ ɢᴇᴛs Dᴇʟᴇᴛᴇᴅ.</b>"
-            )
+            codeflix_msgs = []
+            for msg in messages:
+                if not msg:  # Skip None messages
+                    continue
+                caption = (CUSTOM_CAPTION.format(previouscaption="" if not msg.caption else msg.caption.html, 
+                                                filename=msg.document.file_name) if bool(CUSTOM_CAPTION) and bool(msg.document)
+                          else ("" if not msg.caption else msg.caption.html))
 
-            await asyncio.sleep(FILE_AUTO_DELETEAny)
+                reply_markup = msg.reply_markup if DISABLE_CHANNEL_BUTTON else None
 
-            for snt_msg in codeflix_msgs:    
-                if snt_msg:
-                    try:    
-                        await snt_msg.delete()  
-                    except Exception as e:
-                        print(f"Error deleting message {snt_msg.id}: {e}")
+                try:
+                    copied_msg = await msg.copy(chat_id=message.from_user.id, caption=caption, parse_mode=ParseMode.HTML, 
+                                               reply_markup=reply_markup, protect_content=PROTECT_CONTENT)
+                    codeflix_msgs.append(copied_msg)
+                except FloodWait as e:
+                    await asyncio.sleep(e.x)
+                    copied_msg = await msg.copy(chat_id=message.from_user.id, caption=caption, parse_mode=ParseMode.HTML, 
+                                               reply_markup=reply_markup, protect_content=PROTECT_CONTENT)
+                    codeflix_msgs.append(copied_msg)
+                except Exception as e:
+                    print(f"Failed to send message: {e}")
+                    pass
 
-            try:
-                reload_url = (
-                    f"https://t.me/{client.username}?start={message.command[1]}"
-                    if message.command and len(message.command) > 1
-                    else None
+            if FILE_AUTO_DELETE > 0:
+                notification_msg = await message.reply(
+                    f"<b>Tʜɪs Fɪʟᴇ ᴡɪʟʟ ʙᴇ Dᴇʟᴇᴛᴇᴅ ɪɴ  {get_exp_time(FILE_AUTO_DELETE)}. Pʟᴇᴀsᴇ sᴀᴠᴇ ᴏʀ ғᴏʀᴡᴀʀᴅ ɪᴛ ᴛᴏ ʏᴏᴜʀ sᴀᴠᴇᴅ ᴍᴇssᴀɢᴇs ʙᴇғᴏʀᴇ ɪᴛ ɢᴇᴛs Dᴇʟᴇᴛᴇᴅ.</b>"
                 )
-                keyboard = InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("ɢᴇᴛ ғɪʟᴇ ᴀɢᴀɪɴ!", url=reload_url)]]
-                ) if reload_url else None
 
-                await notification_msg.edit(
-                    "<b>ʏᴏᴜʀ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ ɪꜱ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ !!\n\nᴄʟɪᴄᴋ ʙᴇʟᴏᴡ ʙᴜᴛᴛᴏɴ ᴛᴏ ɢᴇᴛ ʏᴏᴜʀ ᴅᴇʟᴇᴛᴇᴅ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ 👇</b>",
-                    reply_markup=keyboard
-                )
-            except Exception as e:
-                print(f"Error updating notification with 'Get File Again' button: {e}")
+                await asyncio.sleep(FILE_AUTO_DELETE)
+
+                for snt_msg in codeflix_msgs:    
+                    if snt_msg:
+                        try:    
+                            await snt_msg.delete()  
+                        except Exception as e:
+                            print(f"Error deleting message {snt_msg.id}: {e}")
+
+                try:
+                    reload_url = (
+                        f"https://t.me/{client.username}?start={message.command[1]}"
+                        if message.command and len(message.command) > 1
+                        else None
+                    )
+                    keyboard = InlineKeyboardMarkup(
+                        [[InlineKeyboardButton("ɢᴇᴛ ғɪʟᴇ ᴀɢᴀɪɴ!", url=reload_url)]]
+                    ) if reload_url else None
+
+                    await notification_msg.edit(
+                        "<b>ʏᴏᴜʀ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ ɪꜱ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ !!\n\nᴄʟɪᴄᴋ ʙᴇʟᴏᴡ ʙᴜᴛᴛᴏɴ ᴛᴏ ɢᴇᴛ ʏᴏᴜʀ ᴅᴇʟᴇᴛᴇᴅ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ 👇</b>",
+                        reply_markup=keyboard
+                    )
+                except Exception as e:
+                    print(f"Error updating notification with 'Get File Again' button: {e}")
+        except Exception as e:
+            print(f"Error decoding link: {e}")
+            await message.reply_text("❌ Failed to process the link.")
+            return
     else:
         reply_markup = InlineKeyboardMarkup(
             [
