@@ -9,7 +9,6 @@ from pyrogram import filters
 from pyrogram.enums import ChatMemberStatus
 from config import *
 from pyrogram.errors.exceptions.bad_request_400 import UserNotParticipant
-from shortzy import Shortzy
 from pyrogram.errors import FloodWait
 from database.database import *
 
@@ -85,8 +84,9 @@ async def get_messages(client, message_ids, db_channel_id):
                 chat_id=db_channel_id,
                 message_ids=temb_ids
             )
-        except:
-            pass
+        except Exception as e:
+            print(f"Error fetching messages from {db_channel_id}: {e}")
+            return []
         total_messages += len(temb_ids)
         messages.extend(msgs)
     return messages
@@ -94,6 +94,7 @@ async def get_messages(client, message_ids, db_channel_id):
 async def get_message_id(client, message):
     db_channels = await db.show_db_channels()
     if not db_channels:
+        print("No database channels configured.")
         return 0
     for db_channel_id in db_channels:
         try:
@@ -101,22 +102,21 @@ async def get_message_id(client, message):
             if message.forward_from_chat:
                 if message.forward_from_chat.id == db_channel_id:
                     return message.forward_from_message_id
-                else:
-                    continue
+                continue
             elif message.forward_sender_name:
                 continue
             elif message.text:
-                pattern = "https://t.me/(?:c/)?(.*)/(\d+)"
-                matches = re.match(pattern, message.text)
+                pattern = r"https://t\.me/(?:c/)?(?:@)?(\w+)/(\d+)"
+                matches = re.match(pattern, message.text.strip())
                 if not matches:
                     continue
-                channel_id = matches.group(1)
+                channel_identifier = matches.group(1)
                 msg_id = int(matches.group(2))
-                if channel_id.isdigit():
-                    if f"-100{channel_id}" == str(db_channel_id):
+                if channel_identifier.isdigit():
+                    if f"-100{channel_identifier}" == str(db_channel_id):
                         return msg_id
                 else:
-                    if channel_id == chat.username.lstrip('@'):
+                    if channel_identifier == chat.username.lstrip('@'):
                         return msg_id
         except Exception as e:
             print(f"Error checking db_channel {db_channel_id}: {e}")
@@ -150,13 +150,18 @@ def get_exp_time(seconds):
     for period_name, period_seconds in periods:
         if seconds >= period_seconds:
             period_value, seconds = divmod(seconds, period_seconds)
-            result += f'{int(period_value)} {period_name}'
-    return result
+            result += f'{int(period_value)} {period_name} '
+    return result.strip()
 
 async def get_shortlink(url, api, link):
-    shortzy = Shortzy(api_key=api, base_site=url)
-    link = await shortzy.convert(link)
-    return link
+    from shortzy import Shortzy
+    try:
+        shortzy = Shortzy(api_key=api, base_site=url)
+        short_link = await shortzy.convert(link)
+        return short_link
+    except Exception as e:
+        print(f"Error generating short link: {e}")
+        return link
 
 subscribed = filters.create(is_subscribed)
 admin = filters.create(check_admin)
