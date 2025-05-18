@@ -75,27 +75,26 @@ class Bot(Client):
             db_channel_ids = await db.show_db_channels()
             if not db_channel_ids:
                 self.LOGGER(__name__).warning("No database channels are set. Please add at least one using /setdbchannel.")
-                self.LOGGER(__name__).info("\nBot Stopped. Join https://t.me/weebs_support for support")
-                sys.exit()
-
-            self.db_channels = []
-            for channel_id in db_channel_ids:
-                try:
-                    db_channel = await self.get_chat(channel_id)
-                    # Verify bot is admin in the channel
-                    chat_member = await self.get_chat_member(channel_id, usr_bot_me.id)
-                    if chat_member.status not in ["administrator", "creator"]:
-                        self.LOGGER(__name__).warning(f"Bot is not an admin in DB channel {channel_id}")
+                # Continue running instead of exiting to allow adding channels
+                self.db_channels = []
+            else:
+                self.db_channels = []
+                for channel_id in db_channel_ids:
+                    try:
+                        db_channel = await self.get_chat(channel_id)
+                        # Verify bot is admin in the channel
+                        chat_member = await self.get_chat_member(channel_id, usr_bot_me.id)
+                        if chat_member.status not in ["administrator", "creator"]:
+                            self.LOGGER(__name__).warning(f"Bot is not an admin in DB channel {channel_id}")
+                            continue
+                        self.db_channels.append(db_channel)
+                    except Exception as e:
+                        self.LOGGER(__name__).warning(f"Error accessing DB channel {channel_id}: {e}")
                         continue
-                    self.db_channels.append(db_channel)
-                except Exception as e:
-                    self.LOGGER(__name__).warning(f"Error accessing DB channel {channel_id}: {e}")
-                    continue
 
-            if not self.db_channels:
-                self.LOGGER(__name__).warning("Bot could not access any DB channels or is not admin in any. Please check channel IDs and permissions.")
-                self.LOGGER(__name__).info("\nBot Stopped. Join https://t.me/weebs_support for support")
-                sys.exit()
+                if not self.db_channels:
+                    self.LOGGER(__name__).warning("Bot could not access any DB channels or is not admin in any. Please check channel IDs and permissions.")
+                    # Continue running instead of exiting to allow adding channels
 
         except Exception as e:
             self.LOGGER(__name__).warning(f"Error checking DB channels: {e}")
