@@ -71,6 +71,7 @@ async def decode(base64_string):
 async def get_messages(client, message_ids, db_channel_id):
     messages = []
     total_messages = 0
+    print(f"Fetching messages {message_ids} from channel {db_channel_id}")  # Debug log
     while total_messages != len(message_ids):
         temb_ids = message_ids[total_messages:total_messages+200]
         try:
@@ -78,21 +79,25 @@ async def get_messages(client, message_ids, db_channel_id):
                 chat_id=db_channel_id,
                 message_ids=temb_ids
             )
+            messages.extend([msg for msg in msgs if msg is not None])  # Filter out None messages
         except FloodWait as e:
+            print(f"FloodWait: Waiting for {e.x} seconds")
             await asyncio.sleep(e.x)
             msgs = await client.get_messages(
                 chat_id=db_channel_id,
                 message_ids=temb_ids
             )
+            messages.extend([msg for msg in msgs if msg is not None])
         except Exception as e:
             print(f"Error fetching messages from {db_channel_id}: {e}")
             return []
         total_messages += len(temb_ids)
-        messages.extend(msgs)
+    print(f"Fetched {len(messages)} messages")  # Debug log
     return messages
 
 async def get_message_id(client, message):
     db_channels = await db.show_db_channels()
+    print(f"get_message_id: DB channels {db_channels}, message: {message.text or 'Forwarded'}")  # Debug log
     if not db_channels:
         print("No database channels configured.")
         return 0
@@ -100,27 +105,35 @@ async def get_message_id(client, message):
         try:
             chat = await client.get_chat(db_channel_id)
             if message.forward_from_chat:
+                print(f"Forwarded from chat: {message.forward_from_chat.id}")  # Debug log
                 if message.forward_from_chat.id == db_channel_id:
+                    print(f"Match found, msg_id: {message.forward_from_message_id}")  # Debug log
                     return message.forward_from_message_id
                 continue
             elif message.forward_sender_name:
+                print("Forwarded from hidden sender, skipping.")  # Debug log
                 continue
             elif message.text:
                 pattern = r"https://t\.me/(?:c/)?(?:@)?(\w+)/(\d+)"
                 matches = re.match(pattern, message.text.strip())
                 if not matches:
+                    print("No match for link pattern.")  # Debug log
                     continue
                 channel_identifier = matches.group(1)
                 msg_id = int(matches.group(2))
+                print(f"Link identifier: {channel_identifier}, msg_id: {msg_id}")  # Debug log
                 if channel_identifier.isdigit():
                     if f"-100{channel_identifier}" == str(db_channel_id):
+                        print(f"Match found for private channel, msg_id: {msg_id}")  # Debug log
                         return msg_id
                 else:
                     if channel_identifier == chat.username.lstrip('@'):
+                        print(f"Match found for public channel, msg_id: {msg_id}")  # Debug log
                         return msg_id
         except Exception as e:
             print(f"Error checking db_channel {db_channel_id}: {e}")
             continue
+    print("No match found for any DB channel.")  # Debug log
     return 0
 
 def get_readable_time(seconds: int) -> str:
