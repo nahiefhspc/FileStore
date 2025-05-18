@@ -7,6 +7,7 @@ from pyrogram.types import ReplyKeyboardMarkup, ReplyKeyboardRemove
 from asyncio import TimeoutError
 from helper_func import encode, get_message_id, admin
 import re
+from database.database import *  # Import db instance
 
 @Bot.on_message(filters.private & admin & filters.command('batch'))
 async def batch(client: Client, message: Message):
@@ -65,7 +66,7 @@ async def batch(client: Client, message: Message):
                     channel_identifier = matches.group(1)
                     chat = await client.get_chat(db_channel_id)
                     if channel_identifier.isdigit():
-                        if f"-100{channel_identifier}" == str(db_channel_id):
+                        if f"-100{channel_identifier}" == str(ch_id):
                             break
                     else:
                         if channel_identifier == chat.username.lstrip('@'):
