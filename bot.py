@@ -1,4 +1,3 @@
-
 # Don't Remove Credit @CodeFlix_Bots, @rohit_1888
 # Ask Doubt on telegram @CodeflixSupport
 #
@@ -41,8 +40,6 @@ async def daily_reset_task():
         pass  
 
 scheduler.add_job(daily_reset_task, "cron", hour=0, minute=0)
-#scheduler.start()
-
 
 name ="""
  BY CODEFLIX BOTS
@@ -73,14 +70,35 @@ class Bot(Client):
         usr_bot_me = await self.get_me()
         self.uptime = datetime.now()
 
+        # Check access to all database channels
         try:
-            db_channel = await self.get_chat(CHANNEL_ID)
-            self.db_channel = db_channel
-            test = await self.send_message(chat_id = db_channel.id, text = "Test Message")
-            await test.delete()
+            db_channel_ids = await db.show_db_channels()
+            if not db_channel_ids:
+                self.LOGGER(__name__).warning("No database channels are set. Please add at least one using /setdbchannel.")
+                self.LOGGER(__name__).info("\nBot Stopped. Join https://t.me/weebs_support for support")
+                sys.exit()
+
+            self.db_channels = []
+            for channel_id in db_channel_ids:
+                try:
+                    db_channel = await self.get_chat(channel_id)
+                    # Verify bot is admin in the channel
+                    chat_member = await self.get_chat_member(channel_id, usr_bot_me.id)
+                    if chat_member.status not in ["administrator", "creator"]:
+                        self.LOGGER(__name__).warning(f"Bot is not an admin in DB channel {channel_id}")
+                        continue
+                    self.db_channels.append(db_channel)
+                except Exception as e:
+                    self.LOGGER(__name__).warning(f"Error accessing DB channel {channel_id}: {e}")
+                    continue
+
+            if not self.db_channels:
+                self.LOGGER(__name__).warning("Bot could not access any DB channels or is not admin in any. Please check channel IDs and permissions.")
+                self.LOGGER(__name__).info("\nBot Stopped. Join https://t.me/weebs_support for support")
+                sys.exit()
+
         except Exception as e:
-            self.LOGGER(__name__).warning(e)
-            self.LOGGER(__name__).warning(f"Make Sure bot is Admin in DB Channel, and Double check the CHANNEL_ID Value, Current Value {CHANNEL_ID}")
+            self.LOGGER(__name__).warning(f"Error checking DB channels: {e}")
             self.LOGGER(__name__).info("\nBot Stopped. Join https://t.me/weebs_support for support")
             sys.exit()
 
@@ -106,9 +124,10 @@ class Bot(Client):
         await app.setup()
         await web.TCPSite(app, "0.0.0.0", PORT).start()
 
-
-        try: await self.send_message(OWNER_ID, text = f"<b><blockquote> Bᴏᴛ Rᴇsᴛᴀʀᴛᴇᴅ by @Codeflix_Bots</blockquote></b>")
-        except: pass
+        try:
+            await self.send_message(OWNER_ID, text=f"<b><blockquote> Bᴏᴛ Rᴇsᴛᴀʀᴛᴇᴅ by @Codeflix_Bots</blockquote></b>")
+        except:
+            pass
 
     async def stop(self, *args):
         await super().stop()
@@ -134,3 +153,4 @@ class Bot(Client):
 # Please see < https://github.com/Codeflix-Bots/FileStore/blob/master/LICENSE >
 #
 # All rights reserved.
+#
