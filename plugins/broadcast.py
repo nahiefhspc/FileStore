@@ -86,7 +86,7 @@ Unsuccessful: <code>{unsuccessful}</code>"""
 #=====================================================================================##
 
 
-@Bot.on_message(filters.private & filters.command('broadcast') & filters.user(ADMINS))
+@Bot.on_message(filters.private & filters.command('broadcast') & admin)
 async def send_text(client: Bot, message: Message):
     if not message.reply_to_message:
         msg = await message.reply("Reply to a message to broadcast it.")
