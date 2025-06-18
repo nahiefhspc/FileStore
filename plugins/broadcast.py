@@ -86,51 +86,69 @@ Unsuccessful: <code>{unsuccessful}</code>"""
 #=====================================================================================##
 
 
-@Bot.on_message(filters.private & filters.command('broadcast') & admin)
+@Bot.on_message(filters.private & filters.command('broadcast') & filters.user(ADMINS))
 async def send_text(client: Bot, message: Message):
-    if message.reply_to_message:
-        query = await db.full_userbase()
-        broadcast_msg = message.reply_to_message
-        total = 0
-        successful = 0
-        blocked = 0
-        deleted = 0
-        unsuccessful = 0
-
-        pls_wait = await message.reply("<i>ʙʀᴏᴀᴅᴄᴀꜱᴛ ᴘʀᴏᴄᴇꜱꜱɪɴɢ....</i>")
-        for chat_id in query:
-            try:
-                await broadcast_msg.copy(chat_id)
-                successful += 1
-            except FloodWait as e:
-                await asyncio.sleep(e.x)
-                await broadcast_msg.copy(chat_id)
-                successful += 1
-            except UserIsBlocked:
-                await db.del_user(chat_id)
-                blocked += 1
-            except InputUserDeactivated:
-                await db.del_user(chat_id)
-                deleted += 1
-            except:
-                unsuccessful += 1
-                pass
-            total += 1
-
-        status = f"""<b><u>ʙʀᴏᴀᴅᴄᴀꜱᴛ...</u>
-
-Total Users: <code>{total}</code>
-Successful: <code>{successful}</code>
-Blocked Users: <code>{blocked}</code>
-Deleted Accounts: <code>{deleted}</code>
-Unsuccessful: <code>{unsuccessful}</code></b>"""
-
-        return await pls_wait.edit(status)
-
-    else:
-        msg = await message.reply(REPLY_ERROR)
+    if not message.reply_to_message:
+        msg = await message.reply("Reply to a message to broadcast it.")
         await asyncio.sleep(8)
-        await msg.delete()
+        return await msg.delete()
+
+    # Extract seconds from command if provided
+    try:
+        seconds = int(message.text.split(maxsplit=1)[1])
+    except (IndexError, ValueError):
+        seconds = None  # No auto-delete if not provided
+
+    query = await db.full_userbase()
+    broadcast_msg = message.reply_to_message
+    total = 0
+    successful = 0
+    blocked = 0
+    deleted = 0
+    unsuccessful = 0
+    sent_messages = []  # To store (chat_id, message_id)
+
+    pls_wait = await message.reply("<i>ʙʀᴏᴀᴅᴄᴀꜱᴛ ᴘʀᴏᴄᴇꜱꜱɪɴɢ ᴛɪʟʟ ᴡᴀɪᴛ ʙʀᴏᴏ... </i>")
+
+    for chat_id in query:
+        try:
+            sent = await broadcast_msg.copy(chat_id)
+            sent_messages.append((chat_id, sent.id))
+            successful += 1
+        except FloodWait as e:
+            await asyncio.sleep(e.x)
+            sent = await broadcast_msg.copy(chat_id)
+            sent_messages.append((chat_id, sent.id))
+            successful += 1
+        except UserIsBlocked:
+            await db.del_user(chat_id)
+            blocked += 1
+        except InputUserDeactivated:
+            await db.del_user(chat_id)
+            deleted += 1
+        except:
+            unsuccessful += 1
+            pass
+        total += 1
+
+    status = f"""<b><u>ʙʀᴏᴀᴅᴄᴀꜱᴛ ᴄᴏᴍᴘʟᴇᴛᴇᴅ</u>
+
+ᴛᴏᴛᴀʟ ᴜꜱᴇʀꜱ: <code>{total}</code>
+ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟ: <code>{successful}</code>
+ʙʟᴏᴄᴋᴇᴅ ᴜꜱᴇʀꜱ: <code>{blocked}</code>
+ᴅᴇʟᴇᴛᴇᴅ ᴀᴄᴄᴏᴜɴᴛꜱ: <code>{deleted}</code>
+ᴜɴꜱᴜᴄᴄᴇꜱꜱꜰᴜʟ: <code>{unsuccessful}</code></b>"""
+
+    await pls_wait.edit(status)
+
+    # Schedule deletion after given seconds if specified
+    if seconds:
+        await asyncio.sleep(seconds)
+        for chat_id, msg_id in sent_messages:
+            try:
+                await client.delete_messages(chat_id, msg_id)
+            except:
+                pass
 
 #=====================================================================================##
 # Don't Remove Credit @CodeFlix_Bots, @rohit_1888
